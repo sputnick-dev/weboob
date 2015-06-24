@@ -123,6 +123,8 @@ class ProHistoryPage(Page):
 
     def parse(self):
         for tr in self.document.xpath('//tr'):
+            if len(tr.xpath('./td[@class="transactionId"]/span')) != 1:
+                    continue
             t = FrenchTransaction(tr.xpath('./td[@class="transactionId"]/span')[0].text.strip())
             date = parse_french_date(tr.xpath('./td[@class="date"]')[0].text.strip())
             status = tr.xpath('./td[@class="desc"]/ul/li[@class="first"]')[0].text.strip()
