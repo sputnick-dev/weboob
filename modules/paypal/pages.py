@@ -115,37 +115,7 @@ class AccountPage(Page):
         return accounts
 
 
-class ProHistoryPage(Page):
-    def iter_transactions(self, account):
-        for trans in self.parse():
-            if trans._currency == account.currency:
-                yield trans
-
-    def parse(self):
-        for tr in self.document.xpath('//tr'):
-            if len(tr.xpath('./td[@class="transactionId"]/span')) != 1:
-                    continue
-            t = FrenchTransaction(tr.xpath('./td[@class="transactionId"]/span')[0].text.strip())
-            date = parse_french_date(tr.xpath('./td[@class="date"]')[0].text.strip())
-            status = tr.xpath('./td[@class="desc"]/ul/li[@class="first"]')[0].text.strip()
-            #We pass this because it's not transaction
-            if status in [u'Créé', u'Annulé', u'Suspendu', u'Mis à jour', u'Actif']:
-                continue
-            raw = tr.xpath('./td[@class="desc"]/strong')[0].text.strip()
-            t.parse(date=date, raw=raw)
-            amount = tr.xpath('./td[@class="price"]/span')[0].text.strip()
-            t.set_amount(amount)
-            t._currency = Account.get_currency(amount)
-            yield t
-
-    def transaction_left(self):
-        return len(self.document.xpath('//div[@class="no-records"]')) == 0
-
-
-class PartHistoryPage(Page):
-    def transaction_left(self):
-        return len(self.document['data']['activity']['COMPLETED']) > 0 or len(self.document['data']['activity']['PENDING']) > 0
-
+class HistoryPage(Page):
     def iter_transactions(self, account):
         for trans in self.parse(account):
             yield trans
@@ -153,35 +123,15 @@ class PartHistoryPage(Page):
     def parse(self, account):
         transactions = list()
 
-        for status in ['PENDING', 'COMPLETED']:
-            transac = self.document['data']['activity'][status]
-            for t in transac:
-                tran = self.parse_transaction(t, account)
-                if tran:
-                    transactions.append(tran)
+        transacs = self.get_transactions()
 
-        transactions.sort(key=lambda tr: tr.rdate, reverse=True)
+        for t in transacs:
+            tran = self.parse_transaction(t, account)
+            if tran:
+                transactions.append(tran)
+
         for t in transactions:
             yield t
-
-    def parse_transaction(self, transaction, account):
-        t = FrenchTransaction(transaction['activityId'])
-        date = parse_french_date(transaction['date'])
-        raw = transaction.get('counterparty', transaction['displayType'])
-        t.parse(date=date, raw=raw)
-
-        try:
-            if transaction['currencyCode'] != account.currency:
-                transaction = self.browser.convert_amount(account, transaction)
-                t.original_amount = self.format_amount(transaction['originalAmount'], transaction["isCredit"])
-                t.original_currency = u'' + transaction["currencyCode"]
-            t.amount = self.format_amount(transaction['netAmount'], transaction["isCredit"])
-        except KeyError:
-            return
-
-        t._currency = transaction['currencyCode']
-
-        return t
 
     def format_amount(self, to_format, is_credit):
         m = re.search(r"\D", to_format[::-1])
@@ -190,6 +140,88 @@ class PartHistoryPage(Page):
             return abs(amount)
         else:
             return -abs(amount)
+
+class ProHistoryPage(HistoryPage):
+    def transaction_left(self):
+        return len(self.document['data']['transactions']) > 0
+
+    def get_transactions(self):
+        return self.document['data']['transactions']
+
+    def parse_transaction(self, transaction, account):
+        if transaction['transactionStatus'] in [u'Créé', u'Annulé', u'Suspendu', u'Mis à jour', u'Actif']:
+            return
+        t = FrenchTransaction(transaction['transactionId'])
+        if not transaction['transactionAmount']['currencyCode'] == account.currency:
+            cc = self.browser.convert_amount(account, transaction, 'https://www.paypal.com/cgi-bin/webscr?cmd=_history-details-from-hub&id=' + transaction['transactionId'])
+            if not cc:
+                return
+            t.original_amount = Decimal(transaction['transactionAmount']['currencyDoubleValue'])
+            t.original_currency = u'' + transaction['transactionAmount']['currencyCode']
+            t.set_amount(cc)
+        else:
+            t.amount = Decimal(transaction['transactionAmount']['currencyDoubleValue'])
+        date = parse_french_date(transaction['transactionTime'])
+        raw = transaction['transactionDescription']
+        t.commission = Decimal(transaction['fee']['currencyDoubleValue'])
+        t.parse(date=date, raw=raw)
+        return t
+
+
+class PartHistoryPage(HistoryPage):
+    def on_loaded(self):
+        self.browser.is_new_api = self.document['viewName'] == 'activityBeta/index'
+
+    def transaction_left(self):
+        if self.browser.is_new_api:
+            return self.document['data']['activity']['hasTransactionsCompleted'] or self.document['data']['activity']['hasTransactionsPending']
+        return len(self.document['data']['activity']['COMPLETED']) > 0 or len(self.document['data']['activity']['PENDING']) > 0
+
+    def get_transactions(self):
+        if self.browser.is_new_api:
+            transacs = self.document['data']['activity']['transactions']
+        else:
+            for status in ['PENDING', 'COMPLETED']:
+                transacs = list()
+                transacs += self.document['data']['activity'][status]
+        return transacs
+
+    def parse_new_api_transaction(self, transaction, account):
+        t = FrenchTransaction(transaction['id'])
+        if not transaction['isPrimaryCurrency']:
+            cc = self.browser.convert_amount(account, transaction, transaction['detailsLink'])
+            if not cc:
+                return
+            t.original_amount = self.format_amount(transaction['amounts']['net']['value'], transaction["isCredit"])
+            t.original_currency = u'' + transaction['amounts']['txnCurrency']
+            t.amount = self.format_amount(cc, transaction['isCredit'])
+        else:
+            t.amount = self.format_amount(transaction['amounts']['net']['value'], transaction['isCredit'])
+        date = parse_french_date(transaction['date']['formattedDate'] + ' ' + transaction['date']['year'])
+        raw = transaction.get('counterparty', transaction['displayType'])
+        t.parse(date=date, raw=raw)
+
+        return t
+
+    def parse_transaction(self, transaction, account):
+        if self.browser.is_new_api:
+            return self.parse_new_api_transaction(transaction, account)
+
+        t = FrenchTransaction(transaction['transactionId'])
+        date = parse_french_date(transaction['date'])
+        if not transaction['txnIsInPrimaryCurrency']:
+            cc = self.browser.convert_amount(account, transaction, transaction['actions']['details']['url'])
+            if not cc:
+                return
+            t.original_amount = self.format_amount(transaction['netAmount'], transaction["isCredit"])
+            t.original_currency = u'' + transaction["currencyCode"]
+            t.amount = self.format_amount(cc, transaction['isCredit'])
+        else:
+            t.amount = self.format_amount(transaction['netAmount'], transaction["isCredit"])
+        raw = transaction.get('counterparty', transaction['displayType'])
+        t.parse(date=date, raw=raw)
+
+        return t
 
 class HistoryDetailsPage(Page):
     def get_converted_amount(self, account):
