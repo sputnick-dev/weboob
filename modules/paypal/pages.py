@@ -216,8 +216,10 @@ class PartHistoryPage(HistoryPage):
             t.original_amount = self.format_amount(transaction['netAmount'], transaction["isCredit"])
             t.original_currency = u'' + transaction["currencyCode"]
             t.amount = self.format_amount(cc, transaction['isCredit'])
-        else:
+        elif 'netAmount' in transaction:
             t.amount = self.format_amount(transaction['netAmount'], transaction["isCredit"])
+        else:
+            return
         raw = transaction.get('counterparty', transaction['displayType'])
         t.parse(date=date, raw=raw)
 
