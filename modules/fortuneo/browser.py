@@ -28,10 +28,10 @@ __all__ = ['Fortuneo']
 
 
 class Fortuneo(Browser):
-    DOMAIN_LOGIN = 'www.fortuneo.fr'
-    DOMAIN = 'www.fortuneo.fr'
+    DOMAIN_LOGIN = 'mabanque.fortuneo.fr'
+    DOMAIN = 'mabanque.fortuneo.fr'
     PROTOCOL = 'https'
-    CERTHASH = ['4ff0301115f80f18c4e81a136ca28829b46d416d404174945b1ae48abd0634e2']
+    CERTHASH = ['772f83159271b4d6f669526fb35acfa0cc8dda62b8ca900fc0d073024e86f423']
     ENCODING = None # refer to the HTML encoding
     PAGES = {
             '.*identification\.jsp.*' :                                                         LoginPage,
