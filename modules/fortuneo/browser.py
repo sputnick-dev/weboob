@@ -28,7 +28,6 @@ __all__ = ['Fortuneo']
 
 
 class Fortuneo(Browser):
-    DOMAIN_LOGIN = 'mabanque.fortuneo.fr'
     DOMAIN = 'mabanque.fortuneo.fr'
     PROTOCOL = 'https'
     CERTHASH = ['772f83159271b4d6f669526fb35acfa0cc8dda62b8ca900fc0d073024e86f423']
@@ -70,14 +69,14 @@ class Fortuneo(Browser):
         assert isinstance(self.password, basestring)
 
         if not self.is_on_page(LoginPage):
-            self.location('https://' + self.DOMAIN_LOGIN + '/fr/identification.jsp', no_login=True)
+            self.location('https://' + self.DOMAIN + '/fr/identification.jsp', no_login=True)
 
         self.page.login(self.username, self.password)
 
         if self.is_on_page(LoginPage):
             raise BrowserIncorrectPassword()
 
-        self.location('https://' + self.DOMAIN_LOGIN + '/fr/prive/mes-comptes/synthese-mes-comptes.jsp')
+        self.location('https://' + self.DOMAIN + '/fr/prive/mes-comptes/synthese-mes-comptes.jsp')
 
         if self.is_on_page(AccountsList) and self.page.need_reload():
             self.location('/ReloadContext?action=1&')
@@ -101,7 +100,7 @@ class Fortuneo(Browser):
         """accounts list"""
 
         if not self.is_on_page(AccountsList):
-            self.location('https://' + self.DOMAIN_LOGIN + '/fr/prive/mes-comptes/synthese-mes-comptes.jsp')
+            self.location('https://' + self.DOMAIN + '/fr/prive/mes-comptes/synthese-mes-comptes.jsp')
 
         return self.page.get_list()
 
